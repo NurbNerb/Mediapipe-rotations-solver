@@ -57,6 +57,9 @@ offsets to match a Mixamo rig exactly. See [Tuning notes](#tuning-notes).
 
 ## How the math works
 
+https://www.youtube.com/watch?v=f42N2yAaEkE (old setup video video)
+https://www.youtube.com/watch?v=QUO4OK8BsUc&t=7s  (test videos)
+
 MediaPipe gives you points in space. A rig needs angles at joints. The script converts
 between the two.
 
