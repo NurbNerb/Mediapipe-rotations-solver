@@ -59,7 +59,7 @@ offsets to match a Mixamo rig exactly. See [Tuning notes](#tuning-notes).
 
 https://www.youtube.com/watch?v=f42N2yAaEkE (old setup video video)
 https://www.youtube.com/watch?v=QUO4OK8BsUc&t=7s  (test videos)
-
+https://www.patreon.com/Nurbs863/posts/retargeter-v2-to-166712796   Full retargeter component 
 MediaPipe gives you points in space. A rig needs angles at joints. The script converts
 between the two.
 
