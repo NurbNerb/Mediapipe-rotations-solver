@@ -13,7 +13,7 @@
 
 
        MediaPipe → Rig Retargeter (pure-Python, TouchDesigner Script CHOP)
-
+ 
 
 
        Feed it MediaPipe World landmark positions, get back clean per-bone rotations for a humanoid rig — hips to fingertips, in real time, inside TouchDesigner. It's one Python file, no external libraries, and it drops straight into a Script CHOP. Invert x y landmarks to -1 to align mediapipe body to match 3d rig orientation. 
