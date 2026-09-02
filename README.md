@@ -10,13 +10,9 @@
      /       \                                         o   o
        you                ──────────►               the skeleton
 
-
-
-       MediaPipe → Rig Retargeter (pure-Python, TouchDesigner Script CHOP)
+ MediaPipe → Rig Retargeter (pure-Python, TouchDesigner Script CHOP)  Paste script into a script chop and click on Setup parameters. You will see all controls populate. This script output the accurate rotations but will need addition offsets to math a mixamo rig perfectly. 
  
-
-
-       Feed it MediaPipe World landmark positions, get back clean per-bone rotations for a humanoid rig — hips to fingertips, in real time, inside TouchDesigner. It's one Python file, no external libraries, and it drops straight into a Script CHOP. Invert x y landmarks to -1 to align mediapipe body to match 3d rig orientation. 
+ Feed it MediaPipe World landmark positions, get back clean per-bone rotations for a humanoid rig — hips to fingertips, in real time, inside TouchDesigner. It's one Python file, no external libraries, and it drops straight into a Script CHOP. Invert x y landmarks to -1 to align mediapipe body to match 3d rig orientation. 
 
 TL;DR
 In: a CHOP of MediaPipe world landmarks — channels named left_shoulder:x/y/z, right_elbow:x/y/z, … (optional :v confidence per joint). Optional 21-point hand CHOPs.
