@@ -516,8 +516,4 @@ math is otherwise mirror-identical.
 - Add a rig by adding one entry to the rig mapping. The math core (`quat_*`,
   `*_from_*_vecs`, the One Euro filter) is plain standard-library Python.
 
----
 
-## License
-
-MIT
