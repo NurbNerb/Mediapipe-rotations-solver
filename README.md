@@ -8,19 +8,17 @@
                      |___/    for TouchDesigner
 
 
-        .-.                                              o
-       (o o)             MediaPipe  ──►  Bones          /|\
-        |=|             ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄         o─┼─o
-       /|.|\             points in ──► angles out        │
-      / | | \            two-bone leg IK · ground        o
-        | |              no numpy · just math + re      ╱ ╲
-       /   \                                           o   o
-      /     \                                          │   │
-     /       \                                         o   o
-       you                ──────────►               the skeleton
-```
+        .-.                                                   o
+       (o o)  MediaPipe  ──► stabiliser ──► Solver ──►  RIG  /|\
+        |=|             ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄              o─┼─o
+       /|.|\             points in ──► angles out             │
+      / | | \            two-bone leg IK · ground             o
+        | |              no numpy · just math + re           ╱ ╲
+       /   \                                                o   o
+      /     \                                               │   │
+     /       \                                              o   o
+       you                                               3d Character
 
-<!-- ══════════════════════════════════════════════════════════════════════ -->
 
 # MediaPipe → Rig Retargeter (pure-Python, TouchDesigner Script CHOP)
 
