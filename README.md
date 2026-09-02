@@ -31,151 +31,141 @@
 ![rigs](https://img.shields.io/badge/rigs-Mixamo%20%7C%20HumanIK%20%7C%20UE4%20%7C%20Custom-purple)
 ![status](https://img.shields.io/badge/single%20file-drop%20in-ff69b4)
 
-Feed it MediaPipe **world**-landmark positions and get back clean per-bone **rotations**
-for a humanoid rig — hips to fingertips, in real time, inside TouchDesigner. It's one
-Python file, no external libraries, and it drops straight into a `Script CHOP`.
+Takes MediaPipe world-landmark positions and outputs per-bone rotations for a humanoid
+rig, hips to fingertips, in real time inside TouchDesigner. It's a single Python file with
+no external libraries, and it runs in a Script CHOP.
 
-It's just a script: read it, fork it, tune it. Paste it into a Script CHOP, click
-**Setup Parameters** to populate all the controls, wire two or three CHOPs, pick a rig,
-and drive a skeleton — no build step, no external process.
+Paste it into a Script CHOP and click **Setup Parameters** to populate the controls, wire
+your input CHOPs, pick a rig, and drive a skeleton.
 
-> **Note:** the solver outputs **accurate** rotations out of the box, but expect to add a
-> few small bind offsets to match a Mixamo rig *perfectly* — see [Tuning notes](#tuning-notes-aka-things-that-will-bite-you).
+The solver produces accurate rotations, but you will usually need to add a few small bind
+offsets to match a Mixamo rig exactly. See [Tuning notes](#tuning-notes).
 
 ---
 
-## TL;DR
+## Summary
 
 - **In:** a CHOP of MediaPipe world landmarks — channels named `left_shoulder:x/y/z`,
-  `right_elbow:x/y/z`, … (optional `:v` confidence per joint). Optional 21-point hand CHOPs.
+  `right_elbow:x/y/z`, and so on (optional `:v` confidence per joint). Optional 21-point
+  hand CHOPs.
 - **Out:** rig rotation channels — `mixamorig_LeftArm:rx/ry/rz`, `…:tx/ty/tz`, etc.
-- **How:** landmarks → direction vectors → quaternions → parent-relative locals →
-  Euler in your rig's rotation order, One-Euro-smoothed the whole way.
-- **Cost:** zero pip installs. It runs on TD's built-in Python.
+- **How:** landmarks → direction vectors → quaternions → parent-relative locals → Euler in
+  your rig's rotation order, smoothed with a One Euro filter throughout.
+- **Requirements:** none to install. It uses TouchDesigner's built-in Python.
 
 ---
 
-## The math, without the lecture
+## How the math works
 
-MediaPipe hands you **dots in space**. A rig wants **angles at joints**. The whole script
-is the bridge between those two facts.
+MediaPipe gives you points in space. A rig needs angles at joints. The script converts
+between the two.
 
-**1. A bone is just an arrow.** Every bone points from its start joint to its end joint,
-so subtract two landmarks and you have the direction it should aim: `elbow - shoulder`
-is where the upper arm points. That's the entire input to the solve — positions only.
+1. **A bone is a direction.** Each bone points from its start joint to its end joint, so
+   subtracting two landmarks gives the direction it should aim (`elbow - shoulder` is where
+   the upper arm points). The solve works entirely from positions.
 
-**2. Turn an arrow into a rotation — two flavors.**
+2. **Direction to rotation, two methods.**
+   - *Swing-only* (`quat_from_two_vecs`): the shortest rotation from a bone's rest direction
+     to its measured direction. Used for bones that only need to point — upper arms,
+     forearms, thighs, calves. The 180° case falls back to a chosen perpendicular axis.
+   - *Full frame* (`quat_from_frame_vecs`): used where roll matters — hips, chest, head,
+     hands, feet. It takes a primary direction plus a secondary reference, builds an
+     orthonormal forward/up/right basis with cross products, builds the same basis for the
+     rest pose, and converts the rotation between them to a quaternion.
 
-- *Swing-only* (`quat_from_two_vecs`): the shortest twist that rotates a bone's rest
-  direction onto its measured direction. Perfect for bones that only need to *point* —
-  upper arms, forearms, thighs, calves. (The degenerate "pointing exactly backwards"
-  case gets a hand-picked perpendicular axis so it never blows up.)
-- *Full frame* (`quat_from_frame_vecs`): when **roll matters** — hips, chest, head,
-  hands, feet — one direction isn't enough. Take a primary axis plus a secondary
-  reference (e.g. spine-up + shoulder-right), Gram-Schmidt them into a clean
-  forward/up/right basis via cross products, build the same basis for the rest pose,
-  and the rotation between the two bases *is* the orientation. Basis → matrix →
-  quaternion.
+3. **World space, then unwound to local.** Each bone is solved in world orientation, then
+   made parent-relative: `local = parent_world⁻¹ · child_world`. The hierarchy is solved in
+   order (hips → spine → neck → head, shoulders → arms → forearms → hands → fingers,
+   hips → legs → feet → toes) so every child unwinds against a parent already solved.
 
-**3. Everyone lives in world space, then gets grounded.** Each bone is solved in world
-orientation and then **unwound against its parent**: `local = parent_world⁻¹ · child_world`.
-That's what a rig's local rotation channels actually want. The hierarchy is walked in
-order — hips → spine → neck → head, shoulders → arms → forearms → hands → fingers,
-hips → legs → feet → toes — so every child unwinds against a parent that's already solved.
+4. **Spine is distributed.** Torso rotation between hips and chest is split across
+   Spine/Spine1/Spine2 with slerp at ⅓, ⅔, and full, so no single joint takes the whole bend.
 
-**4. The spine doesn't snap.** Torso twist between hips and chest is spread across
-Spine/Spine1/Spine2 with slerp at ⅓, ⅔, and full, so no single joint takes the whole bend.
+5. **Euler output in a selectable order.** The final local quaternion is decomposed to
+   `rx/ry/rz` in a rotation order you pick (XYZ … ZYX) to match your downstream Bone COMPs,
+   with gimbal-lock singularities handled.
 
-**5. Quaternions are honest; Euler is what rigs eat.** The final local quaternion is
-decomposed to `rx/ry/rz` in a **selectable rotation order** (XYZ … ZYX) to match whatever
-order your downstream Bone COMPs use, with the gimbal-lock singularities handled.
+6. **Bind offsets are a change of basis.** Rig-specific corrections are applied as a
+   conjugation `q_bind · q · q_bind⁻¹` rather than a static pre-multiply, so a correct 90°
+   value fixes a bone across its whole range.
 
-**6. Bind fixes are a change of basis, not a nudge.** Rig-specific offsets (Mixamo's
-rolled arm axes, etc.) are applied as a **conjugation** `q_bind · q · q_bind⁻¹` rather than
-a static pre-multiply — so one correct 90° value fixes the bone across its *whole* range
-instead of one lucky pose.
+7. **Double-cover handling.** `q` and `-q` are the same rotation, so a shortest-path check
+   (`dot < 0 → negate`) runs before every blend to avoid limbs flipping.
 
-**7. Quaternion double-cover is respected everywhere.** `q` and `-q` are the same
-rotation, so the shortest-path check (`dot < 0 → negate`) is enforced before every blend.
-That's the difference between a limb that eases and a limb that flips inside-out.
+### Smoothing
 
-### Smoothing is the secret sauce
-
-Naive lag makes you choose between jitter and latency. This uses a **One Euro filter** on
-rotations instead: it measures the bone's angular velocity (from the delta quaternion),
-then **raises the cutoff when you move fast** (stay responsive) and **drops it when you
-hold still** (kill the shakes). Position gets a simple exponential lag. And every filter
-in/out is NaN-guarded — one bad frame **heals** the bone's state so it re-inits cleanly
-instead of latching a NaN and making the limb quietly vanish.
+Rotations are smoothed with a One Euro filter, which measures each bone's angular velocity
+and adjusts: less smoothing when moving fast (lower latency), more when nearly still (less
+jitter). Root position uses a simple exponential lag. Filter input and output are checked
+for NaN; a bad frame resets that bone's filter state instead of latching the error.
 
 ---
 
-## What's in the box
+## Features
 
-Beyond the core solve, the toggles you'll actually reach for:
-
-| Capability | What it does |
+| Feature | Description |
 |---|---|
-| **One Euro rotation filter** | Adaptive jitter/latency trade-off, per bone |
-| **Confidence-driven smoothing** | Low-visibility joints (`:v`) get smoothed harder automatically |
-| **Two-bone leg IK + ground contact** | Analytic law-of-cosines knee solve, floor estimation, foot pin / anti-slide |
-| **Predictive lookahead** | Velocity+acceleration extrapolation to cancel end-to-end latency |
-| **Bone-length depth fit** | Learns rest bone lengths to recover believable monocular depth |
-| **Turn continuity gate** | Rejects 1-frame torso pops from MediaPipe's front/back ambiguity |
-| **Facing-flip lock / back-facing fix** | Holds orientation through profile and away-from-camera turns |
-| **Occlusion repair** | Coasts hidden joints instead of snapping |
-| **Arm anti-clip** | Torso-capsule pushout so arms don't sink into the chest |
-| **Shoulder placement offsets** | Rotate the shoulder to fix a bind mesh, with an *exact* cancel on the arm (the quats telescope, so the arm/forearm/hand chain never moves) |
-| **Multi-person** | `p1…pN` channel sets, encounter-ordered, with `pN_present` flags |
-| **Hands + fingers** | Optional 21-landmark hand CHOPs; FRAME or angle-based CURL finger solve |
+| One Euro rotation filter | Per-bone jitter/latency trade-off |
+| Confidence-driven smoothing | Low-visibility joints (`:v`) are smoothed more |
+| Two-bone leg IK + ground contact | Law-of-cosines knee solve, floor estimation, foot pin / anti-slide |
+| Predictive lookahead | Velocity + acceleration extrapolation to offset end-to-end latency |
+| Bone-length depth fit | Learns rest bone lengths to recover depth from a single camera |
+| Turn continuity gate | Rejects single-frame torso flips from MediaPipe front/back ambiguity |
+| Facing-flip lock / back-facing fix | Holds orientation through profile and away-from-camera turns |
+| Occlusion repair | Coasts hidden joints instead of snapping |
+| Arm anti-clip | Torso-capsule pushout so arms don't sink into the chest |
+| Shoulder placement offsets | Rotate the shoulder to fix a bind pose; the arm is cancelled so it doesn't move |
+| Multi-person | `p1…pN` channel sets with `pN_present` flags |
+| Hands + fingers | Optional 21-landmark hand CHOPs; FRAME or angle-based CURL finger solve |
 
-Rig targets out of the box: **Mixamo, HumanIK, Unreal (UE4), and Custom**.
+Rig targets: Mixamo, HumanIK, Unreal (UE4), and Custom.
 
 Three modes on one operator:
 
-- **MOCAP** — live MediaPipe capture (the default path)
-- **ANIM** — pass a CHOP animation source through the same channel plumbing
-- **SKELETON** — read rotations straight off TD Bone COMPs and re-emit them *(work in progress — not functional yet)*
+- **MOCAP** — live MediaPipe capture (the default).
+- **ANIM** — pass a CHOP animation source through the same channel plumbing.
+- **SKELETON** — read rotations from TD Bone COMPs and re-emit them. *Work in progress, not functional yet.*
 
 ---
 
 ## Quick start
 
-1. Create a `Script CHOP`, paste this file into its DAT, and click **Setup Parameters** —
-   every control populates across the parameter pages.
+1. Create a Script CHOP, paste this file into its DAT, and click **Setup Parameters**. The
+   controls populate across the parameter pages.
 2. Wire your inputs:
 
    | Input | Feed it |
    |---|---|
-   | **0** | MediaPipe **world** landmarks as `name:x/y/z` channels (`:v` optional) |
-   | **1** | *(optional)* Left-hand CHOP, 21 landmarks |
-   | **2** | *(optional)* Right-hand CHOP, 21 landmarks |
+   | 0 | MediaPipe world landmarks as `name:x/y/z` channels (`:v` optional) |
+   | 1 | Optional left-hand CHOP, 21 landmarks |
+   | 2 | Optional right-hand CHOP, 21 landmarks |
 
-3. On the **Coords** page, **invert X and Y (set both to −1) and leave Z at +1.** MediaPipe's
-   body arrives upside-down and mirrored; this flips it into the orientation a 3D rig expects.
-4. On the **Retargeter** page: pick your **Target Rig Type**, leave **Mode** on `MOCAP`, and
+3. On the **Coords** page, set **Invert X** and **Invert Y** to on (−1) and leave Z at +1.
+   MediaPipe's body comes in upside-down and mirrored; this aligns it to the orientation a
+   3D rig expects.
+4. On the **Retargeter** page, pick your **Target Rig Type**, leave **Mode** on `MOCAP`, and
    make sure **Enable Retargeter System** is on.
-5. Hit **Load Optimized Filter Presets** for sane smoothing defaults, and drive a rig.
+5. Click **Load Optimized Filter Presets** for reasonable smoothing defaults, then drive a rig.
 
-### Feeding it the right data (read this — it's the #1 gotcha)
+### Input data
 
-MediaPipe's JSON gives you two landmark sets, and you need both, for different jobs:
+MediaPipe's JSON provides two landmark sets, and this tool uses both:
 
-- **`$.worldLandmarks`** — metric 3D positions. **Use these for all limb rotations.**
-  ⚠️ If you don't feed world landmarks, you get **no angle output at all.**
-- **`$.landmarks`** — screen-space (normalized) positions. Use these only for the **hips
-  root position** — wire them to the Screen-Space Landmark CHOP on the **RootPos** page.
+- **`$.worldLandmarks`** — metric 3D positions. Use these for all limb rotations. If you do
+  not feed world landmarks, you will get no rotation output.
+- **`$.landmarks`** — screen-space (normalized) positions. Use these only for the hips root
+  position, wired to the Screen-Space Landmark CHOP on the **RootPos** page.
 
-Confidence/visibility must arrive as a **`:v`** suffix on each joint (e.g. `left_elbow:v`)
-for the confidence-driven features to see it.
+Confidence/visibility must arrive as a `:v` suffix on each joint (for example
+`left_elbow:v`) for the confidence-driven features to use it.
 
-Landmark names follow standard MediaPipe Pose naming (`left_shoulder`, `right_hip`,
-`nose`, `left_ear`, `left_foot_index`, …). Channel names are case-insensitive and the
+Landmark names follow standard MediaPipe Pose naming (`left_shoulder`, `right_hip`, `nose`,
+`left_ear`, `left_foot_index`, and so on). Channel names are case-insensitive, and the
 separator before the axis is flexible (`left_wrist:x`, `left_wrist_x`, `0:tx` all resolve).
 
 ### Output format
 
-Each solved bone writes `rig_bone:rx/ry/rz` (degrees), plus `:tx/ty/tz` for the root and,
+Each solved bone writes `rig_bone:rx/ry/rz` in degrees, plus `:tx/ty/tz` for the root and,
 when **LimbXYZ** is on, for the tracked limb joints. Example (Mixamo):
 
 ```
@@ -183,40 +173,33 @@ mixamorig_LeftForeArm:rx   mixamorig_LeftForeArm:ry   mixamorig_LeftForeArm:rz
 mixamorig_Hips:tx          mixamorig_Hips:ty          mixamorig_Hips:tz
 ```
 
-Multi-person prefixes everything: `p1_mixamorig_LeftArm:rx`, `p2_…`, plus `p1_present`.
+Multi-person prefixes every channel: `p1_mixamorig_LeftArm:rx`, `p2_…`, plus `p1_present`.
 
 ---
 
-## Tuning notes (a.k.a. things that will bite you)
+## Tuning notes
 
-- **The one setting that matters most: `Output Rotate Order`.** It has to match the
-  rotate order of your downstream Bone COMPs. Cycle it against a *combined* pose (bend on
-  two axes at once) — a single-axis pose decodes identically in every order and will lie to you.
-- **Arm still rotated after picking a rig?** The bind offsets are discrete. Nudge that
-  bone's offset in **90° steps on one axis** until it locks. It's a pick, not a fine hunt.
-- **Mixamo shoulders:** the classic fix is `Left Shoulder Y = +90`, `Right Shoulder Y = -90`
-  — applied as a placement offset that the arm cancels exactly, so nothing downstream drifts.
-- **Limb vanished?** Usually a latched NaN in the filter state; here the bone self-heals, but
-  the `LOG` and `LIMBS` debug DATs (toggle **Debug Limb Angles**) show you exactly what each
-  bone solved vs. what it wrote.
+- **Output Rotate Order** must match the rotate order of your downstream Bone COMPs. Test it
+  against a pose bent on two axes at once; a single-axis pose decodes the same in every order
+  and won't reveal a mismatch.
+- If an arm is still rotated wrong after picking a rig, adjust that bone's bind offset in 90°
+  steps on one axis until it lines up. These are discrete corrections, not fine adjustments.
+- For Mixamo shoulders, the usual fix is Left Shoulder Y = +90 and Right Shoulder Y = −90.
+  It is applied as a placement offset that the arm cancels, so nothing downstream moves.
+- If a limb disappears, it is usually a NaN latched in the filter state. The bone re-inits on
+  its own; enable **Debug Limb Angles** to write per-bone solved-vs-written values to the
+  `LIMBS` table, and check the `LOG` table.
 
 ---
 
-## Why you might like it
+## Notes
 
-- **Readable.** It's plain functions and comments, not a compiled black box. Every trick
-  above is a few lines you can lift into your own project.
-- **Hackable.** Add a rig by adding one dict entry. Change a solve by editing one section.
-- **Portable-ish.** The math core (`quat_*`, `*_from_*_vecs`, the One Euro filter) is pure
-  stdlib — copy it out and it runs anywhere Python does.
+- Single Python file, no external dependencies (uses `math` and `re` only).
+- Add a rig by adding one entry to the rig mapping. The math core (`quat_*`,
+  `*_from_*_vecs`, the One Euro filter) is plain standard-library Python.
 
 ---
 
 ## License
 
-_Add your license of choice here (MIT is a friendly default for something this reusable)._
-
----
-
-<sub>Built for live performance / virtual production work in TouchDesigner. If it saves you a
-weekend of quaternion debugging, that's the whole point.</sub>
+_Add your license here (MIT is a common choice)._
