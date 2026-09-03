@@ -9,9 +9,9 @@
 
 
         .-.                                              o
-       (o o)  MediaPipe──►Stabiliser──►Solver──►Bones   /|\
+       (o o)  MediaPipe──►Stabiliser──►Solver──►Bones    |
         |=|          ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄            o─┼─o
-       /|.|\          points in ──► angles out           │
+       /|.|\          points in ──► angles out        /  │  \
       / | | \         two-bone leg IK · ground           o
         | |           no numpy · just math + re         ╱ ╲
        /   \                                           o   o
